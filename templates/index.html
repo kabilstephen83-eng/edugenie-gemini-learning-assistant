@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EduGenie AI</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/style.css') }}">
+</head>
+<body>
+    <main class="container">
+        <section class="hero">
+            <p class="eyebrow">AI-POWERED LEARNING ASSISTANT</p>
+            <h1>EduGenie</h1>
+            <p class="subtitle">
+                Ask questions, simplify concepts, generate quizzes, summarize content,
+                and build a structured learning path.
+            </p>
+        </section>
+
+        <section class="card">
+            <form id="eduForm">
+                <label for="task">Choose a learning task</label>
+                <select id="task">
+                    <option value="qa">Ask a Question</option>
+                    <option value="explain">Explain a Topic</option>
+                    <option value="quiz">Generate Quiz</option>
+                    <option value="summarize">Summarize Text</option>
+                    <option value="learn">Learning Path</option>
+                </select>
+
+                <label for="level" id="levelLabel">Learner level</label>
+                <select id="level">
+                    <option value="beginner">Beginner</option>
+                    <option value="intermediate">Intermediate</option>
+                    <option value="advanced">Advanced</option>
+                </select>
+
+                <label for="inputText" id="inputLabel">Your question</label>
+                <textarea
+                    id="inputText"
+                    rows="9"
+                    placeholder="Example: Which is the largest ocean?"
+                    required
+                ></textarea>
+
+                <div class="controls">
+                    <label id="countControl">
+                        Quiz questions
+                        <input id="questionCount" type="number" min="1" max="10" value="3">
+                    </label>
+
+                    <label id="weeksControl" class="hidden">
+                        Learning weeks
+                        <input id="weeks" type="number" min="1" max="52" value="8">
+                    </label>
+
+                    <label id="wordsControl" class="hidden">
+                        Summary word limit
+                        <input id="maxWords" type="number" min="30" max="1000" value="150">
+                    </label>
+                </div>
+
+                <button type="submit" id="submitButton">Ask EduGenie</button>
+            </form>
+        </section>
+
+        <section class="card result-card">
+            <div class="result-header">
+                <h2>Result</h2>
+                <span id="status" class="status">Ready</span>
+            </div>
+            <div id="result" class="result">
+                Your AI-generated result will appear here.
+            </div>
+        </section>
+
+        <footer>
+            <span>EduGenie AI</span>
+            <span>FastAPI + Gemini</span>
+        </footer>
+    </main>
+
+    <script>
+        const form = document.getElementById("eduForm");
+        const task = document.getElementById("task");
+        const level = document.getElementById("level");
+        const inputText = document.getElementById("inputText");
+        const inputLabel = document.getElementById("inputLabel");
+        const levelLabel = document.getElementById("levelLabel");
+        const countControl = document.getElementById("countControl");
+        const weeksControl = document.getElementById("weeksControl");
+        const wordsControl = document.getElementById("wordsControl");
+        const questionCount = document.getElementById("questionCount");
+        const weeks = document.getElementById("weeks");
+        const maxWords = document.getElementById("maxWords");
+        const submitButton = document.getElementById("submitButton");
+        const result = document.getElementById("result");
+        const status = document.getElementById("status");
+
+        function updateForm() {
+            const value = task.value;
+
+            level.classList.toggle("hidden", value === "qa" || value === "summarize" || value === "quiz");
+            levelLabel.classList.toggle("hidden", value === "qa" || value === "summarize" || value === "quiz");
+            countControl.classList.toggle("hidden", value !== "quiz");
+            weeksControl.classList.toggle("hidden", value !== "learn");
+            wordsControl.classList.toggle("hidden", value !== "summarize");
+
+            if (value === "qa") {
+                inputLabel.textContent = "Your question";
+                inputText.placeholder = "Example: Which is the largest ocean?";
+                submitButton.textContent = "Ask EduGenie";
+            } else if (value === "explain") {
+                inputLabel.textContent = "Topic to explain";
+                inputText.placeholder = "Example: Pythagoras theorem";
+                submitButton.textContent = "Explain Topic";
+            } else if (value === "quiz") {
+                inputLabel.textContent = "Passage or topic";
+                inputText.placeholder = "Paste the study material here...";
+                submitButton.textContent = "Generate Quiz";
+            } else if (value === "summarize") {
+                inputLabel.textContent = "Text to summarize";
+                inputText.placeholder = "Paste a long educational passage here...";
+                submitButton.textContent = "Summarize";
+            } else {
+                inputLabel.textContent = "Topic for learning path";
+                inputText.placeholder = "Example: SQL";
+                submitButton.textContent = "Build Learning Path";
+            }
+        }
+
+        function escapeHtml(value) {
+            return String(value)
+                .replaceAll("&", "&amp;")
+                .replaceAll("<", "&lt;")
+                .replaceAll(">", "&gt;")
+                .replaceAll('"', "&quot;")
+                .replaceAll("'", "&#039;");
+        }
+
+        function renderText(text) {
+            return escapeHtml(text).replace(/\n/g, "<br>");
+        }
+
+        function renderQuiz(items) {
+            return items.map((item, index) => {
+                const options = item.options.map((option) =>
+                    `<li>${escapeHtml(option)}</li>`
+                ).join("");
+
+                return `
+                    <article class="quiz-question">
+                        <h3>${index + 1}. ${escapeHtml(item.question)}</h3>
+                        <ol class="options">${options}</ol>
+                        <p><strong>Correct answer:</strong> ${escapeHtml(item.answer)}</p>
+                        <p>${escapeHtml(item.explanation || "")}</p>
+                    </article>
+                `;
+            }).join("");
+        }
+
+        task.addEventListener("change", updateForm);
+
+        form.addEventListener("submit", async (event) => {
+            event.preventDefault();
+
+            const selected = task.value;
+            const text = inputText.value.trim();
+
+            if (!text) return;
+
+            let endpoint = "";
+            let payload = {};
+
+            if (selected === "qa") {
+                endpoint = "/qa";
+                payload = { question: text };
+            } else if (selected === "explain") {
+                endpoint = "/explain";
+                payload = { topic: text, level: level.value };
+            } else if (selected === "quiz") {
+                endpoint = "/quiz";
+                payload = { text, question_count: Number(questionCount.value) };
+            } else if (selected === "summarize") {
+                endpoint = "/summarize";
+                payload = { text, max_words: Number(maxWords.value) };
+            } else {
+                endpoint = "/learn/recommendations";
+                payload = { topic: text, level: level.value, weeks: Number(weeks.value) };
+            }
+
+            submitButton.disabled = true;
+            status.textContent = "Generating...";
+            result.innerHTML = '<div class="loader">EduGenie is thinking...</div>';
+
+            try {
+                const response = await fetch(endpoint, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.detail || "Request failed.");
+                }
+
+                if (selected === "qa") {
+                    result.innerHTML = renderText(data.answer);
+                } else if (selected === "explain") {
+                    result.innerHTML = renderText(data.explanation);
+                } else if (selected === "quiz") {
+                    result.innerHTML = renderQuiz(data.quiz);
+                } else if (selected === "summarize") {
+                    result.innerHTML = renderText(data.summary);
+                } else {
+                    result.innerHTML = renderText(data.recommendations);
+                }
+
+                status.textContent = "Complete";
+            } catch (error) {
+                result.innerHTML = `<div class="error">${escapeHtml(error.message)}</div>`;
+                status.textContent = "Error";
+            } finally {
+                submitButton.disabled = false;
+            }
+        });
+
+        updateForm();
+    </script>
+</body>
+</html>
